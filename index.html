@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OSINT: Tracing Digital Footprints — Classified Briefing</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+<style>
+:root{
+  --bg:#000000; --w:#ffffff; --g1:#d4d4d4; --g2:#8a8a8a; --g3:#4a4a4a; --g4:#1c1c1c;
+  --line:rgba(255,255,255,.12); --glass:rgba(255,255,255,.035);
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-font-smoothing:antialiased}
+html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--w);font-family:'Space Grotesk',sans-serif}
+::selection{background:#fff;color:#000}
+
+#net{position:fixed;inset:0;z-index:0}
+.scan{position:fixed;inset:0;z-index:1;pointer-events:none;opacity:.5;
+  background:repeating-linear-gradient(0deg,rgba(255,255,255,.015) 0 1px,transparent 1px 4px)}
+.vig{position:fixed;inset:0;z-index:1;pointer-events:none;
+  background:radial-gradient(ellipse at center,transparent 60%,rgba(0,0,0,.7) 100%)}
+
+/* ---------- HUD ---------- */
+.hud{position:fixed;z-index:20;font-family:'JetBrains Mono',monospace;font-size:.62rem;letter-spacing:.22em;color:var(--g2);text-transform:uppercase}
+.h-tl{top:1.3rem;left:1.8rem;display:flex;align-items:center;gap:.7rem}
+.h-tr{top:1.3rem;right:1.8rem;text-align:right;line-height:1.7}
+.h-bl{bottom:1.3rem;left:1.8rem}
+.h-br{bottom:1.3rem;right:1.8rem;display:flex;gap:.55rem}
+.blink{animation:blink 1.4s steps(2) infinite;color:var(--w)}
+@keyframes blink{50%{opacity:0}}
+.bar{position:fixed;top:0;left:0;right:0;height:2px;background:rgba(255,255,255,.07);z-index:21}
+.bar i{display:block;height:100%;width:0;background:#fff;transition:width .7s cubic-bezier(.65,0,.35,1)}
+.hint{position:fixed;bottom:1.3rem;left:50%;transform:translateX(-50%);z-index:20;
+  font-family:'JetBrains Mono',monospace;font-size:.6rem;letter-spacing:.22em;color:var(--g3);text-transform:uppercase;display:flex;gap:1.6rem}
+.hint b{color:var(--g1);font-weight:400}
+.nb{width:36px;height:36px;background:transparent;border:1px solid var(--line);color:var(--g2);
+  font-family:'JetBrains Mono',monospace;font-size:.75rem;cursor:pointer;transition:all .3s;display:flex;align-items:center;justify-content:center}
+.nb:hover{background:#fff;color:#000;border-color:#fff}
+.frame{position:fixed;inset:14px;border:1px solid rgba(255,255,255,.06);z-index:2;pointer-events:none}
+
+/* ---------- DECK ---------- */
+.deck{position:fixed;inset:0;z-index:5}
+.slide{position:absolute;inset:0;display:none;flex-direction:column;justify-content:center;padding:9vh 8vw;will-change:transform,opacity}
+.slide.active{display:flex}
+.slide::-webkit-scrollbar{width:3px}
+.slide::-webkit-scrollbar-thumb{background:var(--g4)}
+
+.kick{font-family:'JetBrains Mono',monospace;font-size:.68rem;letter-spacing:.4em;text-transform:uppercase;color:var(--g2);
+  display:flex;align-items:center;gap:1rem;margin-bottom:1.5rem}
+.kick::before{content:'';width:34px;height:1px;background:var(--w)}
+.kick .n{color:var(--g3)}
+h1.t{font-size:clamp(2.6rem,6vw,5.2rem);font-weight:700;line-height:1.02;letter-spacing:-.03em;color:var(--w)}
+h1.t .ghost{color:transparent;-webkit-text-stroke:1px var(--g3)}
+h2.t{font-size:clamp(1.9rem,4vw,3.4rem);font-weight:700;letter-spacing:-.02em}
+.sub{font-size:clamp(.95rem,1.5vw,1.25rem);color:var(--g2);font-weight:300;margin-top:1.2rem;max-width:46ch;line-height:1.6}
+h2.t .thin{font-weight:300;color:var(--g2)}
+
+/* glass */
+.gl{background:var(--glass);border:1px solid var(--line);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+  position:relative;transition:border-color .4s, background .4s}
+.gl:hover{border-color:rgba(255,255,255,.32);background:rgba(255,255,255,.055)}
+.gl::after{content:'';position:absolute;top:0;left:0;width:22px;height:22px;border-top:1px solid var(--g3);border-left:1px solid var(--g3)}
+
+/* title slide */
+.meta{display:flex;gap:.9rem;margin-top:2.8rem;flex-wrap:wrap}
+.chip{font-family:'JetBrains Mono',monospace;font-size:.66rem;letter-spacing:.16em;color:var(--g1);padding:.65rem 1rem;display:flex;gap:.6rem;align-items:center}
+.chip .sq{width:7px;height:7px;background:var(--w);animation:blink 2s steps(2) infinite}
+.concept{margin-top:2.6rem;font-family:'JetBrains Mono',monospace;font-size:.78rem;color:var(--g2);
+  border-left:1px solid var(--w);padding-left:1.1rem;max-width:56ch;line-height:1.8}
+.concept b{color:var(--w);font-weight:500}
+
+/* methodology */
+.pipe{display:flex;flex-direction:column;gap:1rem;max-width:820px;margin-top:2rem}
+.step{display:flex;gap:1.5rem;padding:1.35rem 1.6rem;align-items:flex-start}
+.sn{font-family:'JetBrains Mono',monospace;font-size:1.5rem;color:var(--w);min-width:2.6rem;font-weight:300}
+.step h3{font-size:1.05rem;font-weight:600;margin-bottom:.3rem}
+.step p{font-size:.88rem;color:var(--g2);line-height:1.6}
+.stag{font-family:'JetBrains Mono',monospace;font-size:.58rem;letter-spacing:.16em;color:var(--g1);border:1px solid var(--line);padding:.18rem .55rem;margin-left:.6rem;vertical-align:middle;text-transform:uppercase}
+
+/* dossier grids */
+.grid{display:grid;gap:1.2rem;margin-top:2rem;max-width:1280px}
+.g2{grid-template-columns:repeat(2,1fr)}
+.g3{grid-template-columns:repeat(3,1fr)}
+@media(max-width:1000px){.grid{grid-template-columns:1fr;overflow-y:auto;padding-right:.4rem}}
+
+.dossier{padding:1.5rem 1.5rem 1.4rem;cursor:default;transform-style:preserve-3d}
+.d-head{display:flex;align-items:center;gap:1rem;margin-bottom:1.1rem;transform:translateZ(24px)}
+.d-num{font-family:'JetBrains Mono',monospace;font-size:.62rem;letter-spacing:.2em;color:#000;background:var(--w);padding:.35rem .55rem;font-weight:700}
+.d-name{font-weight:700;font-size:1rem;letter-spacing:.02em;line-height:1.25}
+.d-sub{font-family:'JetBrains Mono',monospace;font-size:.58rem;color:var(--g3);letter-spacing:.18em;margin-top:.25rem;text-transform:uppercase}
+.sec{font-family:'JetBrains Mono',monospace;font-size:.58rem;letter-spacing:.3em;color:var(--g2);text-transform:uppercase;
+  display:flex;align-items:center;gap:.7rem;margin:1rem 0 .55rem;transform:translateZ(16px)}
+.sec::before{content:'';width:8px;height:8px;background:var(--w)}
+.sec::after{content:'';flex:1;height:1px;background:var(--line)}
+.dl{display:flex;flex-direction:column;gap:.4rem;transform:translateZ(12px)}
+.dr{display:flex;gap:.9rem;font-size:.76rem;line-height:1.5;padding:.42rem .6rem;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.05)}
+.dr .k{font-family:'JetBrains Mono',monospace;color:var(--g3);font-size:.62rem;letter-spacing:.1em;text-transform:uppercase;min-width:86px;padding-top:.2em;flex-shrink:0}
+.dr .v{font-family:'JetBrains Mono',monospace;color:var(--g1);word-break:break-word}
+.pills{display:flex;flex-wrap:wrap;gap:.35rem;transform:translateZ(18px)}
+.pill{font-family:'JetBrains Mono',monospace;font-size:.6rem;padding:.26rem .6rem;color:var(--g1);
+  border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.04)}
+.pill.hot{color:#000;background:var(--w);border-color:var(--w);font-weight:500}
+.redact{display:inline-block;background:var(--w);color:transparent;user-select:none;border-radius:1px}
+
+/* conclusion */
+.cwrap{max-width:860px}
+.ctext{font-size:clamp(1.1rem,1.9vw,1.5rem);line-height:1.75;font-weight:300;color:var(--g1);margin-top:1.6rem;max-width:60ch}
+.ctext .w{color:var(--w);font-weight:500}
+.stats{display:flex;gap:1.1rem;margin-top:2.6rem;flex-wrap:wrap}
+.stat{flex:1;min-width:180px;padding:1.4rem;text-align:center}
+.stat .num{font-family:'JetBrains Mono',monospace;font-size:2.1rem;font-weight:300;color:var(--w)}
+.stat .lbl{font-family:'JetBrains Mono',monospace;font-size:.58rem;color:var(--g2);letter-spacing:.2em;text-transform:uppercase;margin-top:.45rem}
+</style>
+</head>
+<body>
+
+<canvas id="net"></canvas>
+<div class="scan"></div><div class="vig"></div><div class="frame"></div>
+<div class="bar"><i id="bar"></i></div>
+
+<div class="hud h-tl"><span class="blink">&#9632;</span> OSINT // CLASSIFIED BRIEFING</div>
+<div class="hud h-tr">TIMUR CHELEBIYEV<br>IDENTITY AGGREGATION UNIT</div>
+<div class="hud h-bl" id="clock">00:00:00 UTC — SECURE CHANNEL</div>
+<div class="hud h-br">
+  <button class="nb" id="pB" aria-label="Previous">&#9664;</button>
+  <button class="nb" id="nB" aria-label="Next">&#9654;</button>
+</div>
+<div class="hint"><span><b>&#8592; &#8594;</b> NAVIGATE</span><span><b>SPACE</b> ADVANCE</span></div>
+
+<div class="deck" id="deck">
+
+<!-- 01 TITLE -->
+<section class="slide">
+  <div class="kick anim">OPEN SOURCE INTELLIGENCE <span class="n">/ 01</span></div>
+  <h1 class="t anim">OSINT: Tracing<br><span class="ghost">Digital Footprints</span></h1>
+  <p class="sub anim">Identity Aggregation &amp; Network Analysis</p>
+  <div class="meta">
+    <div class="chip gl anim"><span class="sq"></span> CREATOR — TIMUR CHELEBIYEV</div>
+    <div class="chip gl anim">&#91; ACADEMIC CASE STUDY &#93;</div>
+    <div class="chip gl anim">EYES ONLY — PUBLIC DATA</div>
+  </div>
+  <p class="concept anim">CONCEPT // <b>Fragmented public data mapping in a closed network.</b></p>
+</section>
+
+<!-- 02 METHODOLOGY -->
+<section class="slide">
+  <div class="kick anim">METHODOLOGY <span class="n">/ 02</span></div>
+  <h2 class="t anim">Data Acquisition <span class="thin">Pipeline</span></h2>
+  <div class="pipe">
+    <div class="step gl anim"><div class="sn">01</div><div><h3>Student Directory <span class="stag">Baseline</span></h3><p>Baseline identity establishment — the seed layer of the investigation graph.</p></div></div>
+    <div class="step gl anim"><div class="sn">02</div><div><h3>Sherlock Project <span class="stag">Automation</span></h3><p>Cross-platform username tracking across social networks at machine speed.</p></div></div>
+    <div class="step gl anim"><div class="sn">03</div><div><h3>Deanonymization Bots <span class="stag">Enrichment</span></h3><p>Reverse MSISDN search for contact book tags and hidden group affiliations.</p></div></div>
+  </div>
+</section>
+
+<!-- 03 DOSSIERS 01-02 -->
+<section class="slide">
+  <div class="kick anim">PHASE I — SUBJECT DOSSIERS <span class="n">/ 03</span></div>
+  <h2 class="t anim">Dossiers <span class="thin">01 — 02</span></h2>
+  <div class="grid g2">
+    <div class="dossier gl anim tilt">
+      <div class="d-head"><div class="d-num">01</div><div><div class="d-name">ELIF T&Uuml;RKER</div><div class="d-sub">Subject File — Verified</div></div></div>
+      <div class="sec">Идентификация</div>
+      <div class="dl">
+        <div class="dr"><span class="k">Телефон</span><span class="v">9989002014<span class="redact">**</span> (Beeline, UZ)</span></div>
+        <div class="dr"><span class="k">Telegram</span><span class="v">@aelisl<span class="redact">***</span> [ID: 1493496<span class="redact">***</span>]</span></div>
+        <div class="dr"><span class="k">Соцсети</span><span class="v">Вконтакте — Elif T<span class="redact">***</span> (21.07.2001)</span></div>
+      </div>
+      <div class="sec">Сетевой след</div>
+      <div class="pills"><span class="pill">Aftobuzdegi Qiz</span><span class="pill">Elif</span><span class="pill">elif opchajonim Yagona</span><span class="pill">elifca</span><span class="pill">Ferro</span><span class="pill">Елиф</span><span class="pill">Элифка</span></div>
+    </div>
+    <div class="dossier gl anim tilt">
+      <div class="d-head"><div class="d-num">02</div><div><div class="d-name">ВЕРА АМОСОВА</div><div class="d-sub">Subject File — Verified</div></div></div>
+      <div class="sec">Идентификация</div>
+      <div class="dl">
+        <div class="dr"><span class="k">Телефон</span><span class="v">9989365320<span class="redact">**</span> (Ucell, UZ)</span></div>
+        <div class="dr"><span class="k">Telegram</span><span class="v">@ilnr_s<span class="redact">***</span> [ID: 849056<span class="redact">***</span>]</span></div>
+        <div class="dr"><span class="k">Соцсети</span><span class="v">Вконтакте — Вера А<span class="redact">***</span> (20.03.1997)</span></div>
+      </div>
+      <div class="sec">Сетевой след</div>
+      <div class="pills"><span class="pill">.</span><span class="pill">Ильнар</span><span class="pill">Эля</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- 04 DOSSIERS 03-04 -->
+<section class="slide">
+  <div class="kick anim">PHASE I — SUBJECT DOSSIERS <span class="n">/ 04</span></div>
+  <h2 class="t anim">Dossiers <span class="thin">03 — 04</span></h2>
+  <div class="grid g2">
+    <div class="dossier gl anim tilt">
+      <div class="d-head"><div class="d-num">03</div><div><div class="d-name">ХУШНУТБЕКОВ МУХАММАД</div><div class="d-sub">Subject File — Verified</div></div></div>
+      <div class="sec">Идентификация</div>
+      <div class="dl">
+        <div class="dr"><span class="k">Телефон</span><span class="v">9989775087<span class="redact">**</span> (Mobiuz, UZ) | Возраст: 21 (31.01.2005)</span></div>
+        <div class="dr"><span class="k">Telegram</span><span class="v">@mukh<span class="redact">***</span> [ID: 1301356<span class="redact">***</span>]</span></div>
+        <div class="dr"><span class="k">E-mail</span><span class="v">shukronazabar<span class="redact">***</span>@mail.ru</span></div>
+        <div class="dr"><span class="k">Соцсети</span><span class="v">Одноклассники — Алишан З<span class="redact">***</span> (27.07.1968)</span></div>
+      </div>
+      <div class="sec">Сетевой след</div>
+      <div class="pills"><span class="pill">Muhammadjon</span><span class="pill">Muhamadjon</span><span class="pill">С Масчит Томон</span><span class="pill">Мухаммаджон</span><span class="pill">Xushnudbekov Muhammadjon</span><span class="pill">9989775087<span class="redact">**</span></span><span class="pill">Alishanaka</span><span class="pill">Алик валюта</span><span class="pill">Алик Турк</span><span class="pill">Алишан</span><span class="pill">Алишан Зандаров</span></div>
+    </div>
+    <div class="dossier gl anim tilt">
+      <div class="d-head"><div class="d-num">04</div><div><div class="d-name">ANVAROVA MAXFURAT AMIROVNA</div><div class="d-sub">Subject File — Verified</div></div></div>
+      <div class="sec">Идентификация</div>
+      <div class="dl">
+        <div class="dr"><span class="k">Телефон</span><span class="v">9988880885<span class="redact">**</span> (UZ) | Возраст: 67 (01.02.1959)</span></div>
+        <div class="dr"><span class="k">Telegram</span><span class="v">@kheli<span class="redact">***</span> [ID: 5498062<span class="redact">***</span>], @iwwwww<span class="redact">***</span> [ID: 7493293<span class="redact">***</span>]</span></div>
+      </div>
+      <div class="sec">Сетевой след</div>
+      <div class="pills"><span class="pill">Hojiakbar</span><span class="pill">bolakay</span><span class="pill">D Mahliyo</span><span class="pill">Dust</span><span class="pill">Fjf</span><span class="pill">Hojakbar</span><span class="pill">khelifiy</span><span class="pill">khelifiy Bilmadim</span><span class="pill">khelifiy Nnn</span><span class="pill">khelifiy(john)</span><span class="pill">khelifiy(&#9693;)</span><span class="pill">Nurmuhammad Uquv Markaz Wogird</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- 05 DOSSIERS 05-06 -->
+<section class="slide">
+  <div class="kick anim">PHASE II — SUBJECT DOSSIERS <span class="n">/ 05</span></div>
+  <h2 class="t anim">Dossiers <span class="thin">05 — 06</span></h2>
+  <div class="grid g2">
+    <div class="dossier gl anim tilt">
+      <div class="d-head"><div class="d-num">05</div><div><div class="d-name">САМАНДАР МАХМУДОВ</div><div class="d-sub">Subject File — Verified</div></div></div>
+      <div class="sec">Идентификация</div>
+      <div class="dl">
+        <div class="dr"><span class="k">Телефон</span><span class="v">9989979574<span class="redact">**</span> (Uzmobile, UZ)</span></div>
+        <div class="dr"><span class="k">Telegram</span><span class="v">@l0lsam<span class="redact">***</span> [ID: 617918<span class="redact">***</span>]</span></div>
+        <div class="dr"><span class="k">E-mail</span><span class="v">sm396<span class="redact">***</span>@gmail.com</span></div>
+        <div class="dr"><span class="k">Соцсети</span><span class="v">Вконтакте — Самандар М<span class="redact">***</span> (21.02.2003 / 16.06.2006)</span></div>
+      </div>
+      <div class="sec">Сетевой след</div>
+      <div class="pills"><span class="pill">Махмудов Самандар</span><span class="pill">9989979574<span class="redact">**</span></span><span class="pill">Same</span><span class="pill">sampopusk</span><span class="pill">Самандар</span><span class="pill">Самандар Махмудов</span><span class="pill">Самандар Одноклас</span><span class="pill">Самандар Умида</span><span class="pill">саманлар одноклассник</span><span class="pill">Сема</span><span class="pill">Семиз</span></div>
+    </div>
+    <div class="dossier gl anim tilt">
+      <div class="d-head"><div class="d-num">06</div><div><div class="d-name">OLIMBEK BAHROMBEKOV</div><div class="d-sub">Subject File — High Activity</div></div></div>
+      <div class="sec">Идентификация</div>
+      <div class="dl">
+        <div class="dr"><span class="k">Телефон</span><span class="v">9989900085<span class="redact">**</span> (Uzmobile, UZ)</span></div>
+        <div class="dr"><span class="k">Telegram</span><span class="v">@vertex<span class="redact">***</span> [ID: 638783<span class="redact">***</span>] (Ранее: o.bahromb<span class="redact">***</span>)</span></div>
+        <div class="dr"><span class="k">E-mail</span><span class="v">3344<span class="redact">***</span>@kadastr.uz</span></div>
+        <div class="dr"><span class="k">Соцсети</span><span class="v">VK: Unknowno Unknown / Olimbek B<span class="redact">***</span> (31.08.1999) | TikTok: prosto_h<span class="redact">***</span></span></div>
+      </div>
+      <div class="sec">Сетевой след</div>
+      <div class="pills"><span class="pill">Obahrombekov</span><span class="pill">Халимжонов Абдухолик Ботирович</span><span class="pill">Olimbek</span><span class="pill">Dom Xozayka</span><span class="pill">Lupita Lewellen</span><span class="pill">Vincent Butler</span><span class="pill">олим ферма</span></div>
+      <div class="pills"><span class="pill hot">Linebet_Xbet_Mostbet</span><span class="pill hot">Betwinner</span><span class="pill hot">Winwin</span><span class="pill hot">Futbol APK</span><span class="pill hot">webster_gorloks</span><span class="pill hot">SocialCapitalChat и др. (10)</span></div>
+      <div class="pills"><span class="pill">Интересы: Азарт, ставки, спорт (футбол), политика, бизнес, Москва</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- 06 DOSSIERS 07-09 -->
+<section class="slide">
+  <div class="kick anim">PHASE II — SUBJECT DOSSIERS <span class="n">/ 06</span></div>
+  <h2 class="t anim">Dossiers <span class="thin">07 — 09</span></h2>
+  <div class="grid g3">
+    <div class="dossier gl anim tilt">
+      <div class="d-head"><div class="d-num">07</div><div><div class="d-name">MUSLIMA</div><div class="d-sub">Subject File</div></div></div>
+      <div class="sec">Идентификация</div>
+      <div class="dl">
+        <div class="dr"><span class="k">Телефон</span><span class="v">9989001016<span class="redact">**</span> (Beeline, UZ)</span></div>
+        <div class="dr"><span class="k">TG</span><span class="v">@musli<span class="redact">***</span> [ID: 8037231<span class="redact">***</span>]</span></div>
+        <div class="dr"><span class="k">TikTok</span><span class="v">tender._.n<span class="redact">***</span></span></div>
+      </div>
+      <div class="sec">Сетевой след</div>
+      <div class="pills"><span class="pill">Muslima</span></div>
+    </div>
+    <div class="dossier gl anim tilt">
+      <div class="d-head"><div class="d-num">08</div><div><div class="d-name">AMIL</div><div class="d-sub">Subject File</div></div></div>
+      <div class="sec">Идентификация</div>
+      <div class="dl">
+        <div class="dr"><span class="k">Telegram</span><span class="v">@Amil_12<span class="redact">***</span> [ID: 5999308<span class="redact">***</span>] (Ранее: amil_12<span class="redact">**</span>)</span></div>
+      </div>
+      <div class="sec">Сетевой след</div>
+      <div class="pills"><span class="pill hot">Studentlarga kvartira toshkent</span><span class="pill hot">Бахриддин Табиб</span><span class="pill">Интересы: Образование</span></div>
+    </div>
+    <div class="dossier gl anim tilt">
+      <div class="d-head"><div class="d-num">09</div><div><div class="d-name">SOBIROV DIYORBEK</div><div class="d-sub">Subject File — Hub Node</div></div></div>
+      <div class="sec">Идентификация</div>
+      <div class="dl">
+        <div class="dr"><span class="k">Телефон</span><span class="v">9989035146<span class="redact">**</span> (Beeline, UZ)</span></div>
+        <div class="dr"><span class="k">TG</span><span class="v">@Sobiiro<span class="redact">***</span> [ID: 1052267<span class="redact">***</span>]</span></div>
+        <div class="dr"><span class="k">Ранее TG</span><span class="v">Sobirov, Sobirovv19, D1y0rbek_14</span></div>
+      </div>
+      <div class="sec">Сетевой след</div>
+      <div class="pills"><span class="pill">diyor</span><span class="pill">Diyor orto</span><span class="pill">diyorbek trucking mba</span><span class="pill">Sobirov</span><span class="pill">Sobirov Diyorbek</span><span class="pill">Диёр Жияним</span></div>
+      <div class="pills"><span class="pill hot">Связи: 100 номеров</span><span class="pill">+9989116620<span class="redact">**</span></span><span class="pill">+9989092223<span class="redact">**</span></span><span class="pill">+9989359309<span class="redact">**</span></span></div>
+      <div class="pills"><span class="pill hot">witc_chat (Webster / CS)</span><span class="pill hot">appleuz_chat</span><span class="pill">Интересы: Информатика, торговля</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- 07 DOSSIERS 10-12 -->
+<section class="slide">
+  <div class="kick anim">PHASE III — SUBJECT DOSSIERS <span class="n">/ 07</span></div>
+  <h2 class="t anim">Dossiers <span class="thin">10 — 12</span></h2>
+  <div class="grid g3">
+    <div class="dossier gl anim tilt">
+      <div class="d-head"><div class="d-num">10</div><div><div class="d-name">ASAL KHOJIEVA</div><div class="d-sub">Subject File — High Activity</div></div></div>
+      <div class="sec">Идентификация</div>
+      <div class="dl">
+        <div class="dr"><span class="k">Телефон</span><span class="v">9989144044<span class="redact">**</span> (Beeline, UZ)</span></div>
+        <div class="dr"><span class="k">TG</span><span class="v">@asyav<span class="redact">***</span> [ID: 457051<span class="redact">***</span>]</span></div>
+        <div class="dr"><span class="k">Соцсети</span><span class="v">Вконтакте (19.07.2005) | TikTok: asyaviw</span></div>
+      </div>
+      <div class="sec">Сетевой след</div>
+      <div class="pills"><span class="pill">Asal</span><span class="pill">Asal Nevaram</span><span class="pill">Joey Morrow</span><span class="pill">Nolan Davis</span><span class="pill">Асаль</span><span class="pill">ася</span><span class="pill">Сергей граф диз 42 КЦ</span></div>
+      <div class="pills"><span class="pill hot">Связи</span><span class="pill">+3809727115<span class="redact">**</span></span><span class="pill">+9989096056<span class="redact">**</span></span><span class="pill">+9987708590<span class="redact">**</span></span><span class="pill">+9989948777<span class="redact">**</span></span></div>
+      <div class="pills"><span class="pill hot">Apk_888starz</span><span class="pill hot">Betwinner</span><span class="pill hot">Webster University talks</span><span class="pill hot">Webster Tennis club</span><span class="pill hot">WUT-MIS Students</span><span class="pill hot">kreedchat и др. (10)</span></div>
+      <div class="pills"><span class="pill">Интересы: Азарт, теннис, футбол, образование</span></div>
+    </div>
+    <div class="dossier gl anim tilt">
+      <div class="d-head"><div class="d-num">11</div><div><div class="d-name">MUSLIMAKHON</div><div class="d-sub">Subject File</div></div></div>
+      <div class="sec">Идентификация</div>
+      <div class="dl">
+        <div class="dr"><span class="k">Телефон</span><span class="v">9989460675<span class="redact">**</span></span></div>
+        <div class="dr"><span class="k">TG</span><span class="v">@umv<span class="redact">***</span> [ID: 524053<span class="redact">***</span>]</span></div>
+      </div>
+      <div class="sec">Сетевой след</div>
+      <div class="pills"><span class="pill hot">Связи</span><span class="pill">+9989774760<span class="redact">**</span></span><span class="pill">+125153001<span class="redact">**</span></span></div>
+      <div class="pills"><span class="pill hot">webstertravelclub</span><span class="pill hot">studentwebster ("Feedbacks")</span><span class="pill">Интересы: Туризм, обучение</span></div>
+    </div>
+    <div class="dossier gl anim tilt">
+      <div class="d-head"><div class="d-num">12</div><div><div class="d-name">ASAD</div><div class="d-sub">Subject File</div></div></div>
+      <div class="sec">Идентификация</div>
+      <div class="dl">
+        <div class="dr"><span class="k">Телефон</span><span class="v">9989900784<span class="redact">**</span></span></div>
+        <div class="dr"><span class="k">TG</span><span class="v">@asadarabb<span class="redact">***</span> [ID: 5950509<span class="redact">***</span>]</span></div>
+      </div>
+      <div class="sec">Сетевой след</div>
+      <div class="pills"><span class="pill hot">Связи</span><span class="pill">+9989091132<span class="redact">**</span></span></div>
+      <div class="pills"><span class="pill hot">Linebet_Xbet</span><span class="pill hot">1XBET</span><span class="pill hot">Betwinner</span><span class="pill hot">webster_gorloks</span><span class="pill hot">Простор Агро Чат</span><span class="pill hot">LOGISTIC AUTO</span><span class="pill hot">Грузоперевозки UZ</span><span class="pill hot">euroabituruz и др. (10)</span></div>
+      <div class="pills"><span class="pill">Интересы: Ставки, политика, гео (Узбекистан-Россия), агробизнес, грузоперевозки</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- 08 CONCLUSION -->
+<section class="slide">
+  <div class="kick anim">FINAL ANALYSIS <span class="n">/ 08</span></div>
+  <h2 class="t anim">System <span class="thin">Conclusion</span></h2>
+  <div class="cwrap">
+    <p class="ctext anim"><span class="w">Privacy is an illusion without strict digital hygiene.</span> Fragmented data points can be rapidly compiled into a comprehensive personal dossier using only open-source tools.</p>
+    <div class="stats">
+      <div class="stat gl anim"><div class="num">12</div><div class="lbl">Dossiers Compiled</div></div>
+      <div class="stat gl anim"><div class="num">3</div><div class="lbl">Acquisition Phases</div></div>
+      <div class="stat gl anim"><div class="num">0</div><div class="lbl">Non-Public Sources</div></div>
+    </div>
+  </div>
+</section>
+
+</div>
+
+<script>
+/* ====== MONOCHROME NEURAL NET BACKGROUND ====== */
+const cv = document.getElementById('net'), cx = cv.getContext('2d');
+let W,H,pts=[];
+function rs(){W=cv.width=innerWidth;H=cv.height=innerHeight;}
+rs();addEventListener('resize',rs);
+const N = Math.min(130, Math.floor(innerWidth/12));
+for(let i=0;i<N;i++)pts.push({x:Math.random()*W,y:Math.random()*H,vx:(Math.random()-.5)*.3,vy:(Math.random()-.5)*.3,r:Math.random()*1.4+.5,ph:Math.random()*6.28});
+const m={x:-9999,y:-9999};
+addEventListener('mousemove',e=>{m.x=e.clientX;m.y=e.clientY;});
+(function loop(t){
+  cx.clearRect(0,0,W,H);
+  for(const p of pts){
+    p.x+=p.vx; p.y+=p.vy;
+    if(p.x<0||p.x>W)p.vx*=-1;
+    if(p.y<0||p.y>H)p.vy*=-1;
+    const d=Math.hypot(p.x-m.x,p.y-m.y);
+    if(d<130){p.x+=(p.x-m.x)/d*.5;p.y+=(p.y-m.y)/d*.5;}
+    const tw=.35+.3*Math.sin(t/900+p.ph);
+    cx.beginPath();cx.arc(p.x,p.y,p.r,0,7);
+    cx.fillStyle=`rgba(255,255,255,${tw})`;cx.fill();
+  }
+  for(let i=0;i<pts.length;i++)for(let j=i+1;j<pts.length;j++){
+    const a=pts[i],b=pts[j],d=Math.hypot(a.x-b.x,a.y-b.y);
+    if(d<120){
+      cx.beginPath();cx.moveTo(a.x,a.y);cx.lineTo(b.x,b.y);
+      cx.strokeStyle=`rgba(255,255,255,${(1-d/120)*.22})`;cx.lineWidth=.6;cx.stroke();
+    }
+  }
+  requestAnimationFrame(loop);
+})(0);
+
+/* ====== DECK ENGINE ====== */
+const slides=gsap.utils.toArray('.slide');
+let cur=0,busy=false;
+const bar=document.getElementById('bar');
+function animateIn(s,dir){
+  const items=s.querySelectorAll('.anim');
+  const tl=gsap.timeline({onComplete:()=>busy=false});
+  tl.fromTo(s,{opacity:0,x:70*dir,scale:.985},{opacity:1,x:0,scale:1,duration:.7,ease:'power3.out'});
+  tl.fromTo(items,{opacity:0,y:40},{opacity:1,y:0,duration:.8,stagger:.09,ease:'power3.out'},'-=.35');
+  s.querySelectorAll('.dossier,.step,.stat').forEach((c,i)=>{
+    gsap.to(c,{y:'-=4',duration:2.6+i*.35,yoyo:true,repeat:-1,ease:'sine.inOut',delay:1.4});
+  });
+}
+function go(i,dir){
+  if(busy||i===cur||i<0||i>=slides.length)return;
+  busy=true;
+  const old=slides[cur],nx=slides[i];
+  gsap.killTweensOf(old.querySelectorAll('.dossier,.step,.stat'));
+  gsap.to(old,{opacity:0,x:-80*dir,scale:.975,duration:.5,ease:'power2.in',
+    onComplete:()=>{old.classList.remove('active');gsap.set(old,{clearProps:'all'});}});
+  nx.classList.add('active');
+  cur=i;
+  bar.style.width=((i+1)/slides.length*100)+'%';
+  animateIn(nx,dir);
+}
+const nxt=()=>go(cur+1,1), prv=()=>go(cur-1,-1);
+document.getElementById('nB').onclick=nxt;
+document.getElementById('pB').onclick=prv;
+addEventListener('keydown',e=>{
+  if(e.key==='ArrowRight'||e.key===' '||e.key==='PageDown'){e.preventDefault();nxt();}
+  if(e.key==='ArrowLeft'||e.key==='PageUp'){e.preventDefault();prv();}
+  if(e.key==='Home')go(0,-1);
+  if(e.key==='End')go(slides.length-1,1);
+});
+let tx=null;
+addEventListener('touchstart',e=>{tx=e.touches[0].clientX;},{passive:true});
+addEventListener('touchend',e=>{if(tx===null)return;const dx=e.changedTouches[0].clientX-tx;if(Math.abs(dx)>60)(dx<0?nxt:prv)();tx=null;},{passive:true});
+
+/* ====== 3D TILT ====== */
+document.querySelectorAll('.tilt').forEach(c=>{
+  c.addEventListener('mousemove',e=>{
+    const r=c.getBoundingClientRect();
+    const px=(e.clientX-r.left)/r.width-.5, py=(e.clientY-r.top)/r.height-.5;
+    gsap.to(c,{rotateY:px*10,rotateX:-py*10,scale:1.02,duration:.4,ease:'power2.out',transformPerspective:900});
+  });
+  c.addEventListener('mouseleave',()=>gsap.to(c,{rotateX:0,rotateY:0,scale:1,duration:.8,ease:'elastic.out(1,.55)'}));
+});
+
+/* ====== SECURE CLOCK ====== */
+const clk=document.getElementById('clock');
+setInterval(()=>{clk.textContent=new Date().toISOString().substr(11,8)+' UTC — SECURE CHANNEL';},1000);
+
+/* ====== BOOT ====== */
+slides[0].classList.add('active');
+bar.style.width=(1/slides.length*100)+'%';
+gsap.set(slides[0],{opacity:0});
+animateIn(slides[0],1);
+gsap.fromTo('body',{filter:'brightness(3) contrast(2)'},{filter:'brightness(1) contrast(1)',duration:1,ease:'power2.out'});
+</script>
+</body>
+</html>
